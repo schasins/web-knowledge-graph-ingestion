@@ -1,0 +1,185 @@
+.ui-dialog {
+ position: fixed !important;
+ -webkit-box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5) !important;  
+ -moz-box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5) !important; 
+ z-index: 9007199254740991 !important;
+ background-color: rgba(250, 250, 250, 0.95) !important;
+ border-color: #B8C8F3 !important;
+}
+
+iframe {
+	border: 0px !important;
+	width: 100%;
+}
+
+
+#unplacedtexts{
+	background-color: white;
+	border: 1px solid #ebebeb;
+	padding: 7px;
+	max-height: 300px;
+	overflow: scroll;
+}
+.unplacedtext{
+	background-color: #E9E9E9;
+	-webkit-border-radius: 10px;
+	padding: 7px;
+	margin: 2px;
+    display: inline-block;
+}
+
+table{
+	-webkit-border-radius: 10px;
+	border-radius: 10px;
+	background-color: white;
+	margin: 5px;
+	padding: 5px;
+	border: 1px solid #B9B9B9;
+  	border-collapse: collapse;
+}
+td{
+	padding: 5px;
+}
+
+table td, table th {
+  border: 1px solid #B9B9B9;
+}
+table tr:first-child th {
+  border-top: 0;
+}
+table tr:last-child td {
+  border-bottom: 0;
+}
+table tr td:first-child,
+table tr th:first-child {
+  border-left: 0;
+}
+table tr td:last-child,
+table tr th:last-child {
+  border-right: 0;
+}
+
+table tr:last-child td:first-child {
+    border-bottom-left-radius: 10px;
+}
+
+table tr:last-child td:last-child {
+    border-bottom-right-radius: 10px;
+}
+
+.tableplaceholder{
+	width: 70px;
+	height: 10px;
+}
+
+#file-selector{
+	display: block;
+	width: 80%;
+	height: 35%;
+	border: 1px #286CDB dashed;
+	border-radius: 25px;
+	text-align: center;
+    outline: none;
+    margin: auto;
+    padding: 10%;
+}
+
+input[type="file"] {
+    display: none;
+}
+
+* {
+	outline: none;
+}
+
+.highlighted-col{
+	background-color: #C9F8C2;
+}
+
+.data-point{
+	background-color: #75A2EB;
+	padding: 10px;
+	border-radius: 10px;
+}
+
+.data-connection{
+	border-left: 2px black solid;
+	padding: 8px;
+	margin-left: 30px;
+}
+
+.connection-data-point{
+	background-color: #B1CBF6;
+	padding: 8px;
+	border-radius: 10px;
+}
+
+.data-connection-label{
+	padding-bottom: 12px;
+}
+
+#visualization-area{
+	padding-top: 30px;
+}
+
+input{
+	width: 100%;
+}
+
+.autocomplete {
+  /*the container must be positioned relative:*/
+  position: relative;
+  display: inline-block;
+}
+.autocomplete-items {
+  position: absolute;
+  border: 1px solid #d4d4d4;
+  border-bottom: none;
+  border-top: none;
+  z-index: 99;
+  /*position the autocomplete items to be the same width as the container:*/
+  top: 100%;
+  left: 0;
+  right: 0;
+}
+.autocomplete-items div {
+  padding: 10px;
+  cursor: pointer;
+  background-color: #fff;
+  border-bottom: 1px solid #d4d4d4;
+}
+.autocomplete-items div:hover {
+  /*when hovering an item:*/
+  background-color: #e9e9e9;
+}
+.autocomplete-active {
+  /*when navigating through the items using the arrow keys:*/
+  background-color: DodgerBlue !important;
+  color: #ffffff;
+}
+
+.wiki-label{
+	font-size: 11px;
+	padding-right: 5px;
+}
+.wiki-description{
+	font-style: italic;
+	font-size: 10px;
+	color: #999999;
+}
+
+.wide{
+	width: 400px;
+}
+
+.mode-switch{
+	font-size: 10px;
+	padding-top: 20px;
+}
+
+#visualization-area{
+	font-size: 11px;
+}
+#export{
+	margin-top: 10px;
+}

@@ -1,0 +1,46 @@
+{
+  "name": "Web Knowledge Graph Ingestion",
+  "version": "0.1",
+  "description": "Data Collection.",
+  "permissions": [
+  ],
+  "browser_action": {
+      "default_title": "Web Knowledge Graph Ingestion",
+      "default_icon": "icon.png"
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "manifest_version": 2,
+  "content_security_policy": "script-src 'self' https://ajax.googleapis.com; object-src 'self'",
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*",
+        "file://*/*"
+      ],
+      "match_about_blank": true,
+      "all_frames": true,
+      "js": [
+        "lib/jquery.js",
+        "lib/jquery-ui.js",
+        "lib/underscore-min.js",
+        "lib/jquery_csv.js",
+        "lib/moment.min.js",
+        "lib/wikibase-sdk.min.js",
+        "lib/wikidata-sdk.min.js",
+        "lib/jquery.bind-first-0.2.3.min.js",
+        "lib/N3.bundle.js",
+        "autocomplete.js",
+        "output-structure.js",
+        "content.js"
+      ],
+      "css": [ 
+        "lib/jquery-ui.css",
+        "style.css"
+      ]
+    }
+  ]
+}
