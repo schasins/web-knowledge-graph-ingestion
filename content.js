@@ -131,74 +131,37 @@
     return false;
   }
 
-  var responsesResolve = null;
-  var responsesReject = null;
-
-  var numCells = 0;
-  var numApproved = 0;
-  var numRejected = 0;
-
-  // all we're going to do in this promise is make the resolve and reject handlers available
-  // so that the wdkResponse, the handler we're using to handle incoming ajax responses
-  // can call them as soon as the last ajax response comes in
-  var waitForResponsesPromise = function(wdkurl) {
-    return new Promise(function(resolve, reject) {
-      responsesResolve = resolve;
-      responsesReject = reject;
-
-      wdkResponse(null);
-    });
-  }
-
-  function wdkResponse(data){
-    // console.log(data);
-    // for this response, if the wikidata list of results (data.search) has at least one entry
-    // let's guess that it's a known entity
-    if (data){
-      if (data.search.length > 0){
-        numApproved += 1;
-      }
-      else{
-        numRejected += 1;
-      }
-    }
-    // have we received responses for all the data cells?
-    if ((numApproved + numRejected) >= numCells){
-      // yep!  so let's go ahead and finish the promise
-      responsesResolve(numApproved*1.0/numCells);
-    }
-  }
-
   async function checkIfKnownEntities(colData){
-    numCells = colData.length;
-    numApproved = 0;
-    numRejected = 0;
-
+    var wdkPromises = []
     for (var i = 0; i < colData.length; i++){
       // first let's send off all this ajax requests
       var wdkurl = wdk.searchEntities(colData[i]);
       // console.log("url", wdkurl);
-      $.ajax({
-        dataType: "json",
-        url: wdkurl,
-        success: wdkResponse
-      });
+      wdkPromises.push(
+        new Promise(function (resolve, reject) {
+          $.ajax({
+            url: wdkurl,
+            dataType: "json",
+            success: function (data) {
+              resolve(data && data.search.length > 0); // true if there is at least one entity found
+            },
+            error: function (err) {
+              reject(err);
+            }
+        })}));
     }
 
-    var realEntitiesOverAllCellsRatio = 0;
     // ok, now let's wait until all of those responses have come back
-    // and we'll advance once we know the ratio of items that seem to be actual entities to cells in the column
-    await waitForResponsesPromise().then(function(result) {
-        console.log(result);
-        realEntitiesOverAllCellsRatio = result;
+    // and calculate the ratio of items that seem to be actual entities to cells in the column
+    return await Promise.all(wdkPromises).then(function(result) {
+        var numApproved = result.reduce(
+            (sum, isApproved) => (isApproved ? 1 : 0) + sum, 0)
+        var realEntitiesOverAllCellsRatio = (numApproved*1.0)/colData.length;
+        console.log(realEntitiesOverAllCellsRatio);
+        return (realEntitiesOverAllCellsRatio > 0.7) // todo: is 0.7 a good threshold for this?
       }, function(err) {
         console.log(err);
       });
-
-    if (realEntitiesOverAllCellsRatio > 0.7){ // todo: is 0.7 a good threshold for this?
-      return true;
-    }
-    return false;
   }
 
   const DataTypesEnum = {"dates":1, "intliterals":2, "floatliterals":3, "knownentities":4, "unknown":5};
