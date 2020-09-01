@@ -203,7 +203,7 @@
 
   const DataTypesEnum = {"dates":1, "intliterals":2, "floatliterals":3, "knownentities":4, "unknown":5};
   Object.freeze(DataTypesEnum);
-  var columnTypeCache = []
+  var columnTypeCache = [] // Caches the data types of the colums
 
   // todo: a good way to speed up this process (especially because checking for entities
   // is very slow, requires potentially hundreds of ajax requests)
@@ -213,56 +213,62 @@
     for (var i = 0; i < columnsToUse.length; i++){
       var index = columnsToUse[i];
       if (!(index in columnTypeCache)) {
-          var colData = table.map(row => row[index]);
-          colData = colData.slice(1); // drop the header
-          console.log(colData);
-          // let's find out if the items in the column are
-          // dates, integers, floats, or known entities in wikidata
-          if (checkIfDates(colData)) {columnTypeCache[index] = DataTypesEnum.dates;
-          } else if (checkIfIntLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.intliterals;
-          } else if (checkIfFloatLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.floatliterals;
-          } else if (await checkIfKnownEntities(colData)) {columnTypeCache[index] = DataTypesEnum.knownentities;
-          } else if (checkIfIntLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.intliterals;
-          } else {columnTypeCache[index] = DataTypesEnum.unknown;} // we couldn't figure it out
-      }
+        var colData = table.map(row => row[index]);
+        colData = colData.slice(1); // drop the header
+        console.log(colData);
+        // let's find out if the items in the column are
+        // dates, integers, floats, or known entities in wikidata
+        if (checkIfDates(colData)) {columnTypeCache[index] = DataTypesEnum.dates;
+        } else if (checkIfIntLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.intliterals;
+        } else if (checkIfFloatLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.floatliterals;
+        } else if (await checkIfKnownEntities(colData)) {columnTypeCache[index] = DataTypesEnum.knownentities;
+        } else if (checkIfIntLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.intliterals;
+        } else {columnTypeCache[index] = DataTypesEnum.unknown;} // we couldn't figure it out
+        }
     }
     console.log("column types", columnTypeCache);
     return columnTypeCache;
   }
 
+  // Gets the table column index of the column that has data of the given type
   function getColumnWithType(columnsToUse, columnTypes, type) {
-      return columnTypes.findIndex(
-          (colType, column) => column !== undefined && columnsToUse.includes(column) &&
-            colType === type);
+    return columnTypes.findIndex(
+      (colType, column) => column !== undefined && columnsToUse.includes(column) &&
+        colType === type);
   }
 
+  // True if the table has a column to use of the given type, false otherwise
   function tableHasType(columnsToUse, columnTypes, type) {
-      return getColumnWithType(columnsToUse, columnTypes, type) > -1;
+    return getColumnWithType(columnsToUse, columnTypes, type) > -1;
   }
 
+  // True if the table has one column that is a number and one that is of the given type
   function tableHasTypeAndNumber(columnsToUse, columnTypes, type) {
     return tableHasType(columnsToUse, columnTypes, type) &&
       (tableHasType(columnsToUse, columnTypes, DataTypesEnum.intliterals) ||
       tableHasType(columnsToUse, columnTypes, DataTypesEnum.floatliterals));
   }
 
+  // Creates a node of the given type using the given node constructor
   function getNodeOfType(table, columnsToUse, columnTypes, type, createNode) {
-      var typeIndexIntoTable = getColumnWithType(columnsToUse, columnTypes, type)
-      if (typeIndexIntoTable !== undefined) {
-          var typeCol = table.map(row => row[typeIndexIntoTable]);
-          return new createNode(typeCol);
-      }
-      return undefined;
+    var typeIndexIntoTable = getColumnWithType(columnsToUse, columnTypes, type)
+    if (typeIndexIntoTable !== undefined) {
+        var typeCol = table.map(row => row[typeIndexIntoTable]);
+        return new createNode(typeCol);
+    }
+    return undefined;
   }
 
+  // Good ole invariant: the table has one column of the given type and one number
   function generateNodes(table, columnsToUse, columnTypes, type, createNode) {
-      var typeNode = getNodeOfType(table, columnsToUse, columnTypes, type, createNode);
-      var intNode = getNodeOfType(table, columnsToUse, columnTypes,
-          DataTypesEnum.intliterals, OutputStructure.IntLiteral);
-      var floatNode = getNodeOfType(table, columnsToUse, columnTypes,
-          DataTypesEnum.floatliterals, OutputStructure.FloatLiteral); // one of these (int or float) will be -1
-      var numNode = intNode || floatNode;
-      return {typeNode, numNode};
+    var typeNode = getNodeOfType(table, columnsToUse, columnTypes, type, createNode);
+    // Create a number node (note that one of these number nodes will be undefined)
+    var intNode = getNodeOfType(table, columnsToUse, columnTypes,
+      DataTypesEnum.intliterals, OutputStructure.IntLiteral);
+    var floatNode = getNodeOfType(table, columnsToUse, columnTypes,
+      DataTypesEnum.floatliterals, OutputStructure.FloatLiteral); // one of these (int or float) will be -1
+    var numNode = intNode || floatNode; // get the number node that is defined
+    return {typeNode, numNode};
   }
 
   // NOTE: Something that uses guessing like this might be a good place to use
