@@ -108,7 +108,7 @@
       if (Number.isInteger(parseFloat(str))){
         numValid += 1;
       }
-    } 
+    }
     if (numValid*1.0 / colData.length > .95){ // todo: is this a good threshold?
       return true;
     }
@@ -124,189 +124,148 @@
       if (parseFloat(str)){
         numValid += 1;
       }
-    } 
+    }
     if (numValid*1.0 / colData.length > .95){ // todo: is this a good threshold?
       return true;
     }
     return false;
   }
 
-  var responsesResolve = null;
-  var responsesReject = null;
-
-  var numCells = 0;
-  var numApproved = 0;
-  var numRejected = 0;
-
-  // all we're going to do in this promise is make the resolve and reject handlers available
-  // so that the wdkResponse, the handler we're using to handle incoming ajax responses
-  // can call them as soon as the last ajax response comes in
-  var waitForResponsesPromise = function(wdkurl) { 
-    return new Promise(function(resolve, reject) {
-      responsesResolve = resolve;
-      responsesReject = reject;
-
-      wdkResponse(null);
-    });
-  }
-
-  function wdkResponse(data){
-    // console.log(data);
-    // for this response, if the wikidata list of results (data.search) has at least one entry
-    // let's guess that it's a known entity
-    if (data){
-      if (data.search.length > 0){
-        numApproved += 1;
-      }
-      else{
-        numRejected += 1;
-      }
-    }
-    // have we received responses for all the data cells?
-    if ((numApproved + numRejected) >= numCells){
-      // yep!  so let's go ahead and finish the promise
-      responsesResolve(numApproved*1.0/numCells);
-    }
-  }
-
   async function checkIfKnownEntities(colData){
-    numCells = colData.length;
-    numApproved = 0;
-    numRejected = 0;
-
+    var wdkPromises = []
     for (var i = 0; i < colData.length; i++){
       // first let's send off all this ajax requests
       var wdkurl = wdk.searchEntities(colData[i]);
       // console.log("url", wdkurl);
-      $.ajax({
-        dataType: "json",
-        url: wdkurl,
-        success: wdkResponse
-      });
+      wdkPromises.push(
+        new Promise(function (resolve, reject) {
+          $.ajax({
+            url: wdkurl,
+            dataType: "json",
+            success: function (data) {
+              resolve(data && data.search.length > 0); // true if there is at least one entity found
+            },
+            error: function (err) {
+              reject(err);
+            }
+        })}));
     }
 
-    var realEntitiesOverAllCellsRatio = 0;
     // ok, now let's wait until all of those responses have come back
-    // and we'll advance once we know the ratio of items that seem to be actual entities to cells in the column
-    await waitForResponsesPromise().then(function(result) {
-        console.log(result);
-        realEntitiesOverAllCellsRatio = result;
+    // and calculate the ratio of items that seem to be actual entities to cells in the column
+    return await Promise.all(wdkPromises).then(function(result) {
+        var numApproved = result.reduce(
+            (sum, isApproved) => (isApproved ? 1 : 0) + sum, 0)
+        var realEntitiesOverAllCellsRatio = (numApproved*1.0)/colData.length;
+        console.log(realEntitiesOverAllCellsRatio);
+        return (realEntitiesOverAllCellsRatio > 0.7) // todo: is 0.7 a good threshold for this?
       }, function(err) {
         console.log(err);
       });
-
-    if (realEntitiesOverAllCellsRatio > 0.7){ // todo: is 0.7 a good threshold for this?
-      return true;
-    }
-    return false;
   }
 
   const DataTypesEnum = {"dates":1, "intliterals":2, "floatliterals":3, "knownentities":4, "unknown":5};
   Object.freeze(DataTypesEnum);
+  var columnTypeCache = [] // Caches the data types of the colums
 
+  // todo: a good way to speed up this process (especially because checking for entities
+  // is very slow, requires potentially hundreds of ajax requests)
+  // would be to cache the mapping from indexes to data types
+  // but remember that you'd have to wipe out the mapping if you ever change the current table
   async function labelColumnTypes(table, columnsToUse){
-    var columnTypes = [];
     for (var i = 0; i < columnsToUse.length; i++){
       var index = columnsToUse[i];
-      var colData = table.map(row => row[index]);
-      colData = colData.slice(1); // drop the header
-      console.log(colData);
-      // let's find out if the items in the column are
-      // dates
-      // integers
-      // floats
-      // known entities in wikidata
-      var isDates = checkIfDates(colData);
-      if (isDates) { columnTypes.push(DataTypesEnum.dates); continue; }
-      var isInts = checkIfIntLiterals(colData);
-      if (isInts) { columnTypes.push(DataTypesEnum.intliterals); continue; }
-      var isFloats = checkIfFloatLiterals(colData);
-      if (isFloats) { columnTypes.push(DataTypesEnum.floatliterals); continue; }
-      var isEntities = await checkIfKnownEntities(colData);
-      if (isEntities) { columnTypes.push(DataTypesEnum.knownentities); continue; }
-      columnTypes.push(DataTypesEnum.unknown); // we couldn't figure it out
-      // todo: a good way to speed up this process (especially because checking for entities
-      // is very slow, requires potentially hundreds of ajax requests)
-      // would be to cache the mapping from indexes to data types
-      // but remember that you'd have to wipe out the mapping if you ever change the current table
+      if (!(index in columnTypeCache)) {
+        var colData = table.map(row => row[index]);
+        colData = colData.slice(1); // drop the header
+        console.log(colData);
+        // let's find out if the items in the column are
+        // dates, integers, floats, or known entities in wikidata
+        if (checkIfDates(colData)) {columnTypeCache[index] = DataTypesEnum.dates;
+        } else if (checkIfIntLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.intliterals;
+        } else if (checkIfFloatLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.floatliterals;
+        } else if (await checkIfKnownEntities(colData)) {columnTypeCache[index] = DataTypesEnum.knownentities;
+        } else if (checkIfIntLiterals(colData)) {columnTypeCache[index] = DataTypesEnum.intliterals;
+        } else {columnTypeCache[index] = DataTypesEnum.unknown;} // we couldn't figure it out
+        }
     }
-    console.log("columnTypes", columnTypes);
-    return columnTypes;
+    console.log("column types", columnTypeCache);
+    return columnTypeCache;
   }
 
+  // Gets the table column index of the column that has data of the given type
+  function getColumnWithType(columnsToUse, columnTypes, type) {
+    return columnTypes.findIndex(
+      (colType, column) => column !== undefined && columnsToUse.includes(column) &&
+        colType === type);
+  }
+
+  // True if the table has a column to use of the given type, false otherwise
+  function tableHasType(columnsToUse, columnTypes, type) {
+    return getColumnWithType(columnsToUse, columnTypes, type) > -1;
+  }
+
+  // True if the table has one column that is a number and one that is of the given type
+  function tableHasTypeAndNumber(columnsToUse, columnTypes, type) {
+    return tableHasType(columnsToUse, columnTypes, type) &&
+      (tableHasType(columnsToUse, columnTypes, DataTypesEnum.intliterals) ||
+      tableHasType(columnsToUse, columnTypes, DataTypesEnum.floatliterals));
+  }
+
+  // Creates a node of the given type using the given node constructor
+  function getNodeOfType(table, columnsToUse, columnTypes, type, createNode) {
+    var typeIndexIntoTable = getColumnWithType(columnsToUse, columnTypes, type)
+    if (typeIndexIntoTable !== undefined) {
+        var typeCol = table.map(row => row[typeIndexIntoTable]);
+        return new createNode(typeCol);
+    }
+    return undefined;
+  }
+
+  // Good ole invariant: the table has one column of the given type and one number
+  function generateNodes(table, columnsToUse, columnTypes, type, createNode) {
+    var typeNode = getNodeOfType(table, columnsToUse, columnTypes, type, createNode);
+    // Create a number node (note that one of these number nodes will be undefined)
+    var intNode = getNodeOfType(table, columnsToUse, columnTypes,
+      DataTypesEnum.intliterals, OutputStructure.IntLiteral);
+    var floatNode = getNodeOfType(table, columnsToUse, columnTypes,
+      DataTypesEnum.floatliterals, OutputStructure.FloatLiteral); // one of these (int or float) will be -1
+    var numNode = intNode || floatNode; // get the number node that is defined
+    return {typeNode, numNode};
+  }
+
+  // NOTE: Something that uses guessing like this might be a good place to use
+  // the strategy pattern (assuming there will be more types of guesses in the future)
   async function guessOutputStructure(table, columnsToUse){
     var columnTypes = await labelColumnTypes(table, columnsToUse);
 
     if (columnsToUse.length == 2){
       // here's where we start predicting structures based on what data we have available
-      if (columnTypes.indexOf(DataTypesEnum.dates) > -1 && 
-        (columnTypes.indexOf(DataTypesEnum.intliterals) > -1 || columnTypes.indexOf(DataTypesEnum.floatliterals) > -1)){
+      if (tableHasTypeAndNumber(columnsToUse, columnTypes, DataTypesEnum.dates)){
         // we have dates mapped to some number literals
         // sounds like a single known entity might have these various values at different points in time
         // let's suggest this structure
-
-        var datesIndex = columnTypes.indexOf(DataTypesEnum.dates);
-        var intIndex = columnTypes.indexOf(DataTypesEnum.intliterals);
-        var floatIndex = columnTypes.indexOf(DataTypesEnum.floatliterals); // one of these (int or float) will be -1
-
-        var numNode = null;
-        var numCol = null;
-        if (intIndex > -1){
-          var intIndexIntoTable = columnsToUse[intIndex];
-          numCol = table.map(row => row[intIndexIntoTable]);
-          numNode = new OutputStructure.IntLiteral(numCol);
-        }
-        else{
-          // if we didn't find an int in the column times, then we must have found a float
-          var floatIndexIntoTable = columnsToUse[floatIndex];
-          numCol = table.map(row => row[floatIndexIntoTable]);
-          numNode = new OutputStructure.FloatLiteral(numCol);
-        }
+        var {typeNode:dateNode, numNode} =
+          generateNodes(table, columnsToUse, columnTypes,
+              DataTypesEnum.dates, OutputStructure.DateLiteral);
         // and let's make our unknown entity data point
         var unknownEntityNode = new OutputStructure.SingleEntity(null);
         // connect them; for a relation label, we'll use the header of the numbers column
-        var numbersHeader = numCol[0];
-        var connection = unknownEntityNode.connect("has_" + numbersHeader, numNode);
+        var connection = unknownEntityNode.connect("has_" + numNode.columnHeader, numNode);
         // and let's add the date to the connection
-        var datesIndexIntoTable = columnsToUse[datesIndex];
-        var datesCol = table.map(row => row[datesIndexIntoTable]);
-        var dateNode = new OutputStructure.DateLiteral(datesCol);
         connection.addDataPointToConnection("on_date", dateNode);
-        console.log(unknownEntityNode);
         return unknownEntityNode;
       }
 
-      if (columnTypes.indexOf(DataTypesEnum.knownentities) > -1 && 
-        (columnTypes.indexOf(DataTypesEnum.intliterals) > -1 || columnTypes.indexOf(DataTypesEnum.floatliterals) > -1)){
+      if (tableHasTypeAndNumber(columnsToUse, columnTypes, DataTypesEnum.knownentities)){
         // we have entities mapped to some number literals
         // sounds like these entities might have these various values
         // let's suggest this structure
-
-        var entitiesIndex = columnTypes.indexOf(DataTypesEnum.knownentities);
-        var intIndex = columnTypes.indexOf(DataTypesEnum.intliterals);
-        var floatIndex = columnTypes.indexOf(DataTypesEnum.floatliterals); // one of these (int or float) will be -1
-
-        var numNode = null;
-        var numCol = null;
-        if (intIndex > -1){
-          var intIndexIntoTable = columnsToUse[intIndex];
-          numCol = table.map(row => row[intIndexIntoTable]);
-          numNode = new OutputStructure.IntLiteral(numCol);
-        }
-        else{
-          // if we didn't find an int in the column times, then we must have found a float
-          var floatIndexIntoTable = columnsToUse[floatIndex];
-          numCol = table.map(row => row[floatIndexIntoTable]);
-          numNode = new OutputStructure.FloatLiteral(numCol);
-        }
-        // and let's make our entity data point
-        var entitiesIndexIntoTable = columnsToUse[entitiesIndex];
-        var entitiesCol = table.map(row => row[entitiesIndexIntoTable]);
-        var knownEntityNode = new OutputStructure.KnownEntity(entitiesCol);
+        var {typeNode:knownEntityNode, numNode, numbersHeader} =
+          generateNodes(table, columnsToUse, columnTypes,
+              DataTypesEnum.knownentities, OutputStructure.KnownEntity);
         // connect them; for a relation label, we'll use the header of the numbers column
-        var numbersHeader = numCol[0];
-        var connection = knownEntityNode.connect("has_" + numbersHeader, numNode);
-
+        knownEntityNode.connect("has_" + numNode.columnHeader, numNode);
         return knownEntityNode;
       }
       else{
@@ -341,7 +300,7 @@
         store.addQuad(triples[i][0], triples[i][1], triples[i][2]);
       }
       if (freshTriplesRuns >= connections.length){
-        // hey, we're done!  we can export.  
+        // hey, we're done!  we can export.
         // todo: once we're hooked up to backends, this is where we'll send off the triples
         console.log(store);
       }
@@ -354,6 +313,7 @@
   }
 
   function processNewTable(arrayOfArrays){
+    columnTypeCache = []
     // let's start updating the user's view
     $("#csv-data").append($("<div id='visualization-area'></div>"));
     var button = $("<button id='export'>Export Data</div>");
@@ -379,7 +339,7 @@
     var fileName = event.target.files[0].name;
     var fileReader = new FileReader();
     fileReader.onload = function (event) {
-      
+
       var str = event.target.result;
       if (!str.endsWith("\n")){
         // sometimes the last row gets dropped because no newline at the end of it
@@ -450,7 +410,7 @@
 
     // we have to be bound first (be the first handler to run)
     // because we'll need to prevent all normal handlers from running so we don't get taken away from the page
-    $("*").bindFirst("click", demoClick); 
+    $("*").bindFirst("click", demoClick);
   }
 
   function buttonize(elem, handler){
@@ -500,7 +460,7 @@
     console.log("openPopup");
     if (!popup_open){
       console.log("popup not yet open, about to open");
-      
+
       // go ahead and make the dialog
       var dialogdiv  = $(popuptext);
       buttonize(dialogdiv.find("#switch-to-demo"), switchToDemo);
@@ -532,8 +492,8 @@
       // and let's actually make it a dialog
       div.dialog(
         {
-          title: "Data Demonstration", 
-          width: width, 
+          title: "Data Demonstration",
+          width: width,
           height: height,
           position: {my: "left top", at: "left top", collision: "none"}
         });
