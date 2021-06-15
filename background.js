@@ -22,9 +22,27 @@ function triggerPopupInNewTab(tabid, frameid, msg=null){
 chrome.runtime.onMessage.addListener(
   function(request, sender, sendResponse) {
     console.log(request, sender);
-    if (request.selectedtext){
-      unplacedTexts.push(request.selectedtext);
-      console.log(unplacedTexts);
-      sendNewState();
+    if (request.msgtype === "postcsv"){
+
+        var url = "http://localhost:5000/dobjs";
+        var formData = new FormData();
+
+        var blob = new Blob([request.datafile], { type: "text/csv"});
+        formData.append("datafile", blob);
+        var blob2 = new Blob([request.metadata], { type: "text/json"});
+        formData.append("metadata", blob2);
+
+        fetch(url, {
+          method: 'POST',
+          body: formData
+        })
+          .then(response => response.json())
+          .then(data => {
+            // do whatever with the data from the response
+            console.log("response data", data);
+          });
+
+
+
     }
   });

@@ -287,7 +287,35 @@
     }
   }
 
+  function createDataObject(name, ownerid, description, datafile, comment){
+
+    var metadata = {
+        'name': name,
+        'owner_id': ownerid,
+        'description': description,
+        'comment': comment,
+        'datatype': '/datatypes/csv',
+        'mimetype': 'text/csv',
+        'predecessors': []
+    };
+
+    chrome.runtime.sendMessage({msgtype: "postcsv", metadata: JSON.stringify(metadata), datafile: datafile}, function(response) {});
+  }
+
   function exportAction(){
+    
+    // let's not make triples.  let's just pop out the CSV
+    console.log("currCSV", currCSV);
+    var currCSVText = $.csv.fromArrays(currCSV);
+    console.log("currCSVText", currCSVText);
+
+    // obviously change to actually looking up the ownerId at some point!
+    // shouldn't always just be Mike's ID (even though Mike is #1!)
+
+    var csv_obj_data = createDataObject('Sample extracted data', 1,'Sample CSV data file',currCSVText,'Uploaded from lightweight extraction tool');
+
+    // the version using triples.  doesn't actually export
+    /*
     var connections = currentlyVisualizedOutputNode.traverseForConnections();
     console.log("connections", connections);
 
@@ -310,8 +338,11 @@
       var conn = connections[i];
       conn.makeTriples(freshTriplesHandler);
     }
+    */
+
   }
 
+  var currCSV = null; // hey!  bad place to store this!
   function processNewTable(arrayOfArrays){
     columnTypeCache = []
     // let's start updating the user's view
@@ -321,8 +352,11 @@
     buttonize(button, exportAction);
     $("#csv-data").append($("<p>Columns highlighted in green are the columns we plan to use.  Click on non-green columns to add them to the set we'll use.  Click on green columns to remove them from the set we'll use.</p>"));
 
-
     processFirstTable(arrayOfArrays);
+
+    currCSV = arrayOfArrays; // todo: don't just export the arrayOfArrays; need to map to entities
+    // the line above is just for debugging csv export
+
     // and let's display them
     var sampleData = arrayOfArrays;
     if (sampleData.length > 100) {
