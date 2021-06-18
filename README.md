@@ -21,11 +21,9 @@ The following three sections describe how to get started with this extension.
 
 1. Clone this `git` repository and note the location of the folder that you
    clone it into:
-
 ```
 git clone https://github.com/UChicago-PL/smyth.git
 ```
-
 1. In the new Google Chrome user profile, paste `chrome://extensions/` into your
    URL bar to load a page that lists all your extensions.
 
