@@ -23,7 +23,7 @@ The following three sections describe how to get started with this extension.
    clone it into:
    
    ```
-   https://github.com/schasins/web-knowledge-graph-ingestion.git
+   git clone https://github.com/schasins/web-knowledge-graph-ingestion.git
    ```
    
 1. In the new Google Chrome user profile, paste `chrome://extensions/` into your
