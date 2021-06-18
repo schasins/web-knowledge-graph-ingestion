@@ -67,3 +67,9 @@ effects of your changes. Here is how to do so:
    Knowledge Graph Ingestion extension.
 
 Any changes made to the extension should now be active in Chrome.
+
+## Additional Resources
+
+The following resources may be helpful when working on this extension:
+
+- [Debugging JavaScript with Chrome DevTools](https://www.youtube.com/watch?v=H0XScE08hy8)
