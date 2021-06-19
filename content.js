@@ -1,16 +1,22 @@
+'use strict';
+
 (function ContentScript(){
-  'use strict'
 
   var popup_open = false;
   var popup_obj = null;
   var debug_mode = true;
   var clicked_nodes = [];
 
-  function arrayOfTextsToTableRow(array){
+  function arrayOfTextsToTableRow(array, isElements=false){
     var $tr = $("<tr></tr>");
     for (var j= 0; j< array.length; j++){
       var $td = $("<td></td>");
-      $td.html(_.escape(array[j]).replace(/\n/g,"<br>"));
+      if (isElements){
+        $td.append(array[j]);
+      }
+      else{
+        $td.html(_.escape(array[j]).replace(/\n/g,"<br>")); 
+      }
       $tr.append($td);
     }
     return $tr;
@@ -18,7 +24,12 @@
 
   function arrayOfArraysToTable(arrayOfArrays){
     var $table = $("<table></table>");
-    for (var i = 0; i< arrayOfArrays.length; i++){
+    if (arrayOfArrays.length > 0){
+      var headerCells = Array(arrayOfArrays[0].length).fill($("<div class='header'></div>"));
+      var $tr = arrayOfTextsToTableRow(headerCells, true);
+      $table.append($tr);
+    }
+    for (var i = 0; i < arrayOfArrays.length; i++){
       var array = arrayOfArrays[i];
       var $tr = arrayOfTextsToTableRow(array);
       $table.append($tr);
@@ -68,14 +79,13 @@
   var currTable = null;
   var columnsToUse = [];
 
+  // todo: how much of this do you want to reuse every time user makes an edit, comes
+  // up with new table?
   async function processFirstTable(table){
     currTable = table;
     var firstRow = currTable[0];
-    if (columnsToUse.length < 1 && firstRow.length < 3){
-      columnsToUse = [...Array(firstRow.length).keys()]
-    }
-    var outputNode = await guessOutputStructure(table, columnsToUse);
-    visualizeOutput(outputNode);
+    columnsToUse = [...Array(firstRow.length).keys()]
+    guessOutputStructure(table, columnsToUse);
   }
 
   function checkIfDates(colData){
@@ -93,7 +103,7 @@
         numValid += 1;
       }
     }
-    if (numValid*1.0 / colData.length > .95){ // todo: is this a good threshold?
+    if (numValid*1.0 / colData.length > .7){ // todo: is this a good threshold?
       return true;
     }
     return false;
@@ -109,7 +119,7 @@
         numValid += 1;
       }
     }
-    if (numValid*1.0 / colData.length > .95){ // todo: is this a good threshold?
+    if (numValid*1.0 / colData.length > .7){ // todo: is this a good threshold?
       return true;
     }
     return false;
@@ -125,7 +135,7 @@
         numValid += 1;
       }
     }
-    if (numValid*1.0 / colData.length > .95){ // todo: is this a good threshold?
+    if (numValid*1.0 / colData.length > .7){ // todo: is this a good threshold?
       return true;
     }
     return false;
@@ -133,7 +143,15 @@
 
   async function checkIfKnownEntities(colData){
     var wdkPromises = []
-    for (var i = 0; i < colData.length; i++){
+    // let's only check a sample
+    // note this can make things slow when we do all these ajax requests
+    // may not want to do this long-term, but we'll see.  doing it with a sample should be ok
+
+    var limit = colData.length;
+    if (colData.length > 20){
+      limit = 20;
+    }
+    for (var i = 1; i < limit; i++){ // starting at 1 bc often headers
       // first let's send off all this ajax requests
       var wdkurl = wdk.searchEntities(colData[i]);
       // console.log("url", wdkurl);
@@ -143,6 +161,7 @@
             url: wdkurl,
             dataType: "json",
             success: function (data) {
+              // console.log("data", data, data.search.length);
               resolve(data && data.search.length > 0); // true if there is at least one entity found
             },
             error: function (err) {
@@ -156,12 +175,16 @@
     return await Promise.all(wdkPromises).then(function(result) {
         var numApproved = result.reduce(
             (sum, isApproved) => (isApproved ? 1 : 0) + sum, 0)
-        var realEntitiesOverAllCellsRatio = (numApproved*1.0)/colData.length;
+        var realEntitiesOverAllCellsRatio = (numApproved*1.0)/(limit - 1);
         console.log(realEntitiesOverAllCellsRatio);
-        return (realEntitiesOverAllCellsRatio > 0.7) // todo: is 0.7 a good threshold for this?
+        return (realEntitiesOverAllCellsRatio > 0.5) // todo: is 0.5 a good threshold for this?
       }, function(err) {
         console.log(err);
       });
+  }
+
+  function getKeyByValue(object, value) {
+    return Object.keys(object).find(key => object[key] === value);
   }
 
   const DataTypesEnum = {"dates":1, "intliterals":2, "floatliterals":3, "knownentities":4, "unknown":5};
@@ -169,7 +192,7 @@
   var columnTypeCache = [] // Caches the data types of the colums
 
   // todo: a good way to speed up this process (especially because checking for entities
-  // is very slow, requires potentially hundreds of ajax requests)
+  // is very slow, requires many ajax requests)
   // would be to cache the mapping from indexes to data types
   // but remember that you'd have to wipe out the mapping if you ever change the current table
   async function labelColumnTypes(table, columnsToUse){
@@ -193,98 +216,89 @@
     return columnTypeCache;
   }
 
-  // Gets the table column index of the column that has data of the given type
-  function getColumnWithType(columnsToUse, columnTypes, type) {
-    return columnTypes.findIndex(
-      (colType, column) => column !== undefined && columnsToUse.includes(column) &&
-        colType === type);
-  }
-
-  // True if the table has a column to use of the given type, false otherwise
-  function tableHasType(columnsToUse, columnTypes, type) {
-    return getColumnWithType(columnsToUse, columnTypes, type) > -1;
-  }
-
-  // True if the table has one column that is a number and one that is of the given type
-  function tableHasTypeAndNumber(columnsToUse, columnTypes, type) {
-    return tableHasType(columnsToUse, columnTypes, type) &&
-      (tableHasType(columnsToUse, columnTypes, DataTypesEnum.intliterals) ||
-      tableHasType(columnsToUse, columnTypes, DataTypesEnum.floatliterals));
-  }
-
-  // Creates a node of the given type using the given node constructor
-  function getNodeOfType(table, columnsToUse, columnTypes, type, createNode) {
-    var typeIndexIntoTable = getColumnWithType(columnsToUse, columnTypes, type)
-    if (typeIndexIntoTable !== undefined) {
-        var typeCol = table.map(row => row[typeIndexIntoTable]);
-        return new createNode(typeCol);
+  function addEntityRepresentationInHTMLTable(rowIndex, colIndex, wikidatasearchdata){
+    var rowIndex = rowIndex + 1; // remember we've added a header!  again, ugh, maintaining two representations
+    var row = $($("#csv-data").find("table")[0]).find("tr")[rowIndex];
+    var cell = $($(row).find("td")[colIndex]);
+    // console.log("cell", cell);
+    // console.log("search", wikidatasearchdata[0]);
+    var url = wikidatasearchdata[0].url;
+    var name = wikidatasearchdata[0].label;
+    var id = wikidatasearchdata[0].id;
+    var newEntity = $(`<a href=${url} target='_blank'>${name}(${id})</a>`);
+    var eSpan = null;
+    var entitySpans = $(cell).find(".entity-link");
+    if (entitySpans.length > 0){
+      eSpan = $(entitySpans[0]);
+      eSpan.html("");
     }
-    return undefined;
+    else{
+      eSpan = $("<span class='entity-link'></span>");
+      cell.append(eSpan);
+    }
+    eSpan.append(newEntity);
   }
 
-  // Good ole invariant: the table has one column of the given type and one number
-  function generateNodes(table, columnsToUse, columnTypes, type, createNode) {
-    var typeNode = getNodeOfType(table, columnsToUse, columnTypes, type, createNode);
-    // Create a number node (note that one of these number nodes will be undefined)
-    var intNode = getNodeOfType(table, columnsToUse, columnTypes,
-      DataTypesEnum.intliterals, OutputStructure.IntLiteral);
-    var floatNode = getNodeOfType(table, columnsToUse, columnTypes,
-      DataTypesEnum.floatliterals, OutputStructure.FloatLiteral); // one of these (int or float) will be -1
-    var numNode = intNode || floatNode; // get the number node that is defined
-    return {typeNode, numNode};
+  function replaceHeaderContents(columnIndex, content){
+    // todo: you may eventually want to have multiple things in header, so could
+    // also pass in a selector that tells you which part of header cell to modify
+    var firstRow = $($("#csv-data").find("table")[0]).find("tr")[0];
+    var headerCell = $(firstRow).find("td")[columnIndex];
+    $(headerCell).html(content);
   }
 
-  // NOTE: Something that uses guessing like this might be a good place to use
-  // the strategy pattern (assuming there will be more types of guesses in the future)
+  function labelColumnTypesUserVisible(columnTypes){
+    console.log("columnTypes", columnTypes);
+    for (var i = 0; i < columnTypes.length; i++){
+      replaceHeaderContents(i, getKeyByValue(DataTypesEnum, columnTypes[i]));
+    }
+  }
+
+  function showUserVisibleKnowledgeGraphEntities(table, columnTypes){
+    for (var i = 0; i < columnTypes.length; i++){
+      if (columnTypes[i] === DataTypesEnum.knownentities){
+        for (var row = 0; row < table.length; row++){
+          function processOneEntityString(rowIndex, colIndex){
+
+            var entityString = table[rowIndex][colIndex];
+
+            // todo: man, keeping track of this via row and col index is messy!
+            // especially because we're keeping these parallel tables, the one in JS
+            // memory and the one in HTML
+            // probably better to have an internal representation of the table
+            // and regenerate the HTML table occasionally
+            // but this messy version will work for now
+
+            var wdkurl = wdk.searchEntities(entityString);
+            // console.log("url", wdkurl);
+            $.ajax({
+              url: wdkurl,
+              dataType: "json",
+              success: function (data) {
+                // console.log("data", data, data.search.length);
+                if (data && data.search.length > 0){
+                  addEntityRepresentationInHTMLTable(rowIndex, colIndex, data.search);
+                }
+              },
+              error: function (err) {
+                reject(err);
+              }
+              });
+          }
+          processOneEntityString(row, i);
+        }
+      }
+    }
+  }
+
   async function guessOutputStructure(table, columnsToUse){
     var columnTypes = await labelColumnTypes(table, columnsToUse);
-
-    if (columnsToUse.length == 2){
-      // here's where we start predicting structures based on what data we have available
-      if (tableHasTypeAndNumber(columnsToUse, columnTypes, DataTypesEnum.dates)){
-        // we have dates mapped to some number literals
-        // sounds like a single known entity might have these various values at different points in time
-        // let's suggest this structure
-        var {typeNode:dateNode, numNode} =
-          generateNodes(table, columnsToUse, columnTypes,
-              DataTypesEnum.dates, OutputStructure.DateLiteral);
-        // and let's make our unknown entity data point
-        var unknownEntityNode = new OutputStructure.SingleEntity(null);
-        // connect them; for a relation label, we'll use the header of the numbers column
-        var connection = unknownEntityNode.connect("has_" + numNode.columnHeader, numNode);
-        // and let's add the date to the connection
-        connection.addDataPointToConnection("on_date", dateNode);
-        return unknownEntityNode;
-      }
-
-      if (tableHasTypeAndNumber(columnsToUse, columnTypes, DataTypesEnum.knownentities)){
-        // we have entities mapped to some number literals
-        // sounds like these entities might have these various values
-        // let's suggest this structure
-        var {typeNode:knownEntityNode, numNode, numbersHeader} =
-          generateNodes(table, columnsToUse, columnTypes,
-              DataTypesEnum.knownentities, OutputStructure.KnownEntity);
-        // connect them; for a relation label, we'll use the header of the numbers column
-        knownEntityNode.connect("has_" + numNode.columnHeader, numNode);
-        return knownEntityNode;
-      }
-      else{
-        console.log("Based on the types of the columns identified, we didn't have any predictions about structure.");
-      }
-    }
-  }
-
-  var currentlyVisualizedOutputNode = null;
-
-  function visualizeOutput(outputNode){
-    // todo: note that this only works if the output node we get as input is the first (not second) entity in the
-    // only connection.  do better!
-    $("#visualization-area").html("");
-    if (outputNode){
-      var targetDiv = $("#visualization-area");
-      outputNode.makeVisualRepresentation(targetDiv);
-      currentlyVisualizedOutputNode = outputNode;
-    }
+    // now we'll label the columns according to what we think they are
+    // todo: eventually user should be able to correct the guessed column types
+    labelColumnTypesUserVisible(columnTypes);
+    // now that we have an idea of what's knowledge graph entities, let's label
+    // those to be user-visible as well!
+    showUserVisibleKnowledgeGraphEntities(table, columnTypes);
   }
 
   function createDataObject(name, ownerid, description, datafile, comment){
@@ -302,47 +316,44 @@
     chrome.runtime.sendMessage({msgtype: "postcsv", metadata: JSON.stringify(metadata), datafile: datafile}, function(response) {});
   }
 
-  function exportAction(){
-    
-    // let's not make triples.  let's just pop out the CSV
-    console.log("currCSV", currCSV);
-    var currCSVText = $.csv.fromArrays(currCSV);
+  function makeCSVText(){
+    // let's pop out the CSV
+    console.log("currCSV", currTable);
+    var currCSVText = $.csv.fromArrays(currTable);
     console.log("currCSVText", currCSVText);
+    return currCSVText;
+  }
+
+  function exportAction(){
+    var currCSVText = makeCSVText();
 
     // obviously change to actually looking up the ownerId at some point!
     // shouldn't always just be Mike's ID (even though Mike is #1!)
 
     var csv_obj_data = createDataObject('Sample extracted data', 1,'Sample CSV data file',currCSVText,'Uploaded from lightweight extraction tool');
 
-    // the version using triples.  doesn't actually export
-    /*
-    var connections = currentlyVisualizedOutputNode.traverseForConnections();
-    console.log("connections", connections);
-
-    const store = new window.N3.Store();
-
-    var freshTriplesRuns = 0;
-    var freshTriplesHandler = function(triples){
-      freshTriplesRuns += 1;
-      for (var i = 0; i < triples.length; i++){
-        store.addQuad(triples[i][0], triples[i][1], triples[i][2]);
-      }
-      if (freshTriplesRuns >= connections.length){
-        // hey, we're done!  we can export.
-        // todo: once we're hooked up to backends, this is where we'll send off the triples
-        console.log(store);
-      }
-    }
-
-    for (var i = 0; i < connections.length; i++){
-      var conn = connections[i];
-      conn.makeTriples(freshTriplesHandler);
-    }
-    */
-
   }
 
-  var currCSV = null; // hey!  bad place to store this!
+  function download(filename, text) {
+    var element = document.createElement('a');
+    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+    element.setAttribute('download', filename);
+
+    element.style.display = 'none';
+    document.body.appendChild(element);
+
+    element.click();
+
+    document.body.removeChild(element);
+  }
+
+  function downloadAction(){
+    var currCSVText = makeCSVText();
+
+    // Start file download.
+    download("extracted.csv", currCSVText); // should use more informative name!
+  }
+
   function processNewTable(arrayOfArrays){
     columnTypeCache = []
     // let's start updating the user's view
@@ -350,12 +361,12 @@
     var button = $("<button id='export'>Export Data</div>");
     $("#csv-data").append(button);
     buttonize(button, exportAction);
-    $("#csv-data").append($("<p>Columns highlighted in green are the columns we plan to use.  Click on non-green columns to add them to the set we'll use.  Click on green columns to remove them from the set we'll use.</p>"));
+    var button2 = $("<button id='download'>Download Data</div>");
+    $("#csv-data").append(button2);
+    buttonize(button2, downloadAction);
+    $("#csv-data").append($("<p>Columns highlighted in green are the columns we plan to export.  Click on non-green columns to add them to the set we'll use.  Click on green columns to remove them from the set we'll use.</p>"));
 
     processFirstTable(arrayOfArrays);
-
-    currCSV = arrayOfArrays; // todo: don't just export the arrayOfArrays; need to map to entities
-    // the line above is just for debugging csv export
 
     // and let's display them
     var sampleData = arrayOfArrays;
