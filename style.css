@@ -183,3 +183,10 @@ input{
 #export{
 	margin-top: 10px;
 }
+
+.entity-link{
+	color: blue;
+	font-size: 11px;
+	font-style: italic;
+	font-weight: bold;
+}
