@@ -65,8 +65,12 @@ effects of your changes. Here is how to do so:
 
 1. Click the gray circular reload button in the bottom-right of the Web
    Knowledge Graph Ingestion extension.
+   
+1. Reload the webpage in which you want to use the extension.
 
-Any changes made to the extension should now be active in Chrome.
+1. Reopen the extension.
+
+Any changes made to the extension should now be reflected in the version that's running.
 
 ## Additional Resources
 
